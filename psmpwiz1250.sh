@@ -1,5 +1,4 @@
 #!/bin/bash
-#version 6
 LIBCHK=psmpparms.sample
 VLTFILE=stvlt.chk
 PSMPENVFILE=psmpenv.chk
@@ -10,6 +9,11 @@ PSMPLOGS=psmplogs.chk
 psmpparms="/var/tmp/psmpparms"
 psmpparmstmp="/var/tmp/psmpparmstmp"
 psmpwizerrorlog="_psmpwizerror.log"
+#github
+scriptVersion="6" #update this locally and github.
+masterBranch="https://raw.githubusercontent.com/pCloudServices/psmpwiz/master"
+checkVersion="$masterBranch/LatestPSMP.txt" #update this in github
+newVersion="$masterBranch/psmpwiz1250.sh" #update this locally
 
 #filenames (because package is different than actual file) - this goes with every -ivh/Uvh command
 newVersionFile="CARKpsmp-12.05.0.33.x86_64.rpm"
@@ -89,7 +93,11 @@ editPsmpparms(){
 
 errorLogsPrint(){
 echo "***** Error: Failed to install RPM. Fix the errors and rerun wizard again."
-installlogs=("$PWD"/"$psmpwizerrorlog" "/var/tmp/psmp_install.log" "/var/opt/CARKpsmp/temp/EnvManager.log")
+installlogs=("$PWD"/"$psmpwizerrorlog" "$PWD/psmp_install.log" "$PWD/EnvManager.log")
+
+#copy logs to centralized dir
+\cp /var/tmp/psmp_install.log psmp_install.log
+\cp /var/opt/CARKpsmp/temp/EnvManager.log EnvManager.log
 
 printonce="1"
 for n in ${installlogs[@]}
@@ -104,8 +112,29 @@ do
                         fi
 				#file is not empty so we print it
                 echo "***** $n"
+		else
+			#delete the files copied, less clutter.
+			rm -rf $n
         fi
 done
+}
+
+testGithubVersion(){
+echo "Checking latest version..."
+getVersion=`curl $checkVersion -s`
+
+echo "Script version is: $scriptVersion"
+echo "Latest version is: $getVersion"
+if [[ $getVersion -gt $scriptVersion ]]; then
+        echo "Found a newer version!"
+        echo "Replacing current script with neweer script"
+        mv $0 $0.old
+        echo "Downloading new version from Github"
+        curl -s $masterBranch/$newVersion
+		chmod 755 $0
+        echo "Done, relaunch the script"
+        exit 1
+fi
 }
 
 if [ "$EUID" -ne 0 ]; then
@@ -121,11 +150,12 @@ fi
 
 clear
 echo "--------------------------------------------------------------"
-echo "-----------CyberArk PSMP Installation Wizard ($VERSION_PSMP)-----------"
+echo "-----------CyberArk PSMP Installation Wizard ($VERSION_PSMP) -"
+echo "-----------psmpwiz script version "$scriptVersion" -----------"
 echo "--------------------------------------------------------------"
 
 ########################################################################################
-#------------------------------------Check Previous PSMP------------------------------#
+#------------------------------------Check Previous PSMP------------------------------ #
 ########################################################################################
 
 #check if previous version is installed and only then compare with new version and suggest upgrade
@@ -165,9 +195,28 @@ else
 				#Upgrade command
 				rpm --import RPM-GPG-KEY-CyberArk
 				rpm -Uvh ./IntegratedMode/$newIntergratedInfraFile &> $psmpwizerrorlog
+					#check if package is installed and if log file contains error.
+					if [[ `rpm -qa | grep CARKpsmp-i` ]] && [[ ! `cat $psmpwizerrorlog | grep error` ]]
+					then 
+						echo "RPM package install successful: $newVersionFile"
+					else
+						errorLogsPrint
+						echo "***** Clearing Credentials *****"
+						rm -rf user.cred
+						exit 1
+					fi
 				sleep 2
 				echo ""
 				rpm -Uvh $newVersionFile &> $psmpwizerrorlog
+					if [[ `rpm -qa | grep CARKpsmp-i` ]] && [[ ! `cat $psmpwizerrorlog | grep error` ]]
+					then 
+						echo "RPM package install successful: $newVersionFile"
+					else
+						errorLogsPrint
+						echo "***** Clearing Credentials *****"
+						rm -rf user.cred
+						exit 1
+					fi
 				sleep 1
 				echo ""
 				################################## Delete user.cred
@@ -202,19 +251,28 @@ else
 					echo " "
 					echo "***** Please Enter Privilege Cloud Install Username Password and press ENTER *****"
 					read -s adminpass
-					if [ -z "$adminpass" ]
-						then
-						echo "password is empty, rerun script"
-						exit
-					else
-						adminpw="$(echo -e "${adminpass}" | tr -d '[:space:]')"
-					fi
+						if [ -z "$adminpass" ]
+							then
+							echo "password is empty, rerun script"
+							exit
+						else
+							adminpw="$(echo -e "${adminpass}" | tr -d '[:space:]')"
+						fi
 					PVWAAUTH # PVWA CHECK
 					sleep 8
 					./CreateCredFile user.cred Password -Username $adminuser -Password $adminpass -EntropyFile
 					echo ""
 					echo ""
 					rpm -Uvh --force $newVersionFile  &> $psmpwizerrorlog #Repair
+						if [[ ! `cat $psmpwizerrorlog | grep error` ]]
+						then 
+							echo "RPM package install successful: $newVersionFile"
+						else
+							errorLogsPrint
+							echo "***** Clearing Credentials *****"
+							rm -rf user.cred
+							exit 1
+						fi
 					sleep 1
 					echo ""
 					################################## Delete user.cred
@@ -237,7 +295,7 @@ else
 						sleep 1
 						exit
 					fi
-					else exit 
+				else exit 
 			fi 
 					fi
 		fi
@@ -351,22 +409,34 @@ echo ""
 ################################### rpm installation
 echo "***** Primary RPM Installation, This may take some time...*****"
 rpm --import RPM-GPG-KEY-CyberArk
+echo "***** Installing: $newIntergratedInfraFile"
 rpm -ivh ./IntegratedMode/$newIntergratedInfraFile &> $psmpwizerrorlog
-	if [[ `rpm -qa | grep CARKpsmp-i` ]]
+	if [[ `rpm -qa | grep CARKpsmp-i` ]] && [[ ! `cat $psmpwizerrorlog | grep error` ]] #package must be installed and no errors in log
 	then 
-		echo "RPM package install succesful."
+		echo "***** RPM package install successful: $newIntergratedInfraFile"
 	else
 		errorLogsPrint
+		echo ""
+		echo "***** Let's uninstall RPM packages since installation was not completed. *****"
+		del=`rpm -qa | grep CARKpsmp` && rpm -e $del --quiet
+		echo "***** Clearing Credentials *****"
+		rm -rf user.cred
 		exit 1
 	fi
 echo ""
 sleep 2
+echo "***** Installing: $newVersionFile"
 rpm -ivh $newVersionFile &> $psmpwizerrorlog
-	if [[ `rpm -qa | grep CARKpsmp-1` ]]
+	if [[ `rpm -qa | grep CARKpsmp-1` ]] && [[ ! `cat $psmpwizerrorlog | grep error` ]]
 	then 
-		echo "RPM package install succesful."
+		echo "***** RPM package install successful: $newVersionFile"
 	else
 		errorLogsPrint
+		echo ""
+		echo "***** Let's uninstall RPM packages since installation was not completed. *****"
+		del=`rpm -qa | grep CARKpsmp` && rpm -e $del --quiet
+		echo "***** Clearing Credentials *****"
+		rm -rf user.cred
 		exit 1
 	fi
 
