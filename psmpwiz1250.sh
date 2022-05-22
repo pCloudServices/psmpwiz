@@ -27,9 +27,10 @@ psmpparmstmp="/var/tmp/psmpparmstmp"
 psmpwizerrorlog="_psmpwizerror.log"
 #github
 scriptVersion="7" #update this locally and github.
+scriptFileName="psmpwiz1250.sh"
 masterBranch="https://raw.githubusercontent.com/pCloudServices/psmpwiz/master"
 checkVersion="$masterBranch/LatestPSMP.txt" #update this in github
-newScriptVersion="$masterBranch/psmpwiz1250.sh" #update this locally
+newScriptVersion="$masterBranch/$scriptFileName" #update this locally
 
 #filenames (because package is different than actual file) - this goes with every -ivh/Uvh command
 newVersionFile="CARKpsmp-12.05.0.33.x86_64.rpm"
@@ -63,7 +64,7 @@ if [[ $getVersion -gt $scriptVersion ]]; then
         mv $0 $0.old #move current to old
         echo "***** Downloading new version from Github"
         curl -s $newScriptVersion # -s hides output
-		chmod 755 $0
+		chmod 755 $scriptFileName
         echo "***** Done, relaunch the script."
         exit 1
 fi
