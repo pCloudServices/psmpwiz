@@ -63,7 +63,7 @@ if [[ $getVersion -gt $scriptVersion ]]; then
         echo "***** Replacing current script with neweer script"
         mv $0 $0.old #move current to old
         echo "***** Downloading new version from Github"
-        curl -s $newScriptVersion # -s hides output
+        curl -s $newScriptVersion -o $scriptFileName # -s hides output
 		chmod 755 $scriptFileName
         echo "***** Done, relaunch the script."
         exit 1
