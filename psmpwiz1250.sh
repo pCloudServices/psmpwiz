@@ -29,7 +29,7 @@ psmpwizerrorlog="_psmpwizerror.log"
 scriptVersion="7" #update this locally and github.
 masterBranch="https://raw.githubusercontent.com/pCloudServices/psmpwiz/master"
 checkVersion="$masterBranch/LatestPSMP.txt" #update this in github
-newVersion="$masterBranch/psmpwiz1250.sh" #update this locally
+newScriptVersion="$masterBranch/psmpwiz1250.sh" #update this locally
 
 #filenames (because package is different than actual file) - this goes with every -ivh/Uvh command
 newVersionFile="CARKpsmp-12.05.0.33.x86_64.rpm"
@@ -50,6 +50,25 @@ then
 fi
 
 #Functions
+testGithubVersion(){
+echo "***** Checking latest version on Github..."
+getVersion=`curl $checkVersion -s`
+
+echo "***** Script version is: $scriptVersion"
+echo "***** Latest version is: $getVersion"
+sleep 2
+if [[ $getVersion -gt $scriptVersion ]]; then
+        echo "***** Found a newer version!"
+        echo "***** Replacing current script with neweer script"
+        mv $0 $0.old #move current to old
+        echo "***** Downloading new version from Github"
+        curl -s $newScriptVersion # -s hides output
+		chmod 755 $0
+        echo "***** Done, relaunch the script."
+        exit 1
+fi
+}
+
 #PVWA Calls
 pvwaLogin(){
 rest=$(curl --location -k -m 40 --connect-timeout 20 -s --request POST --w " %{http_code}" "$pvwaURLAPI/Auth/CyberArk/Logon" \
@@ -192,25 +211,6 @@ do
 			rm -rf $n
         fi
 done
-}
-
-testGithubVersion(){
-echo "***** Checking latest version on Github..."
-getVersion=`curl $checkVersion -s`
-
-echo "***** Script version is: $scriptVersion"
-echo "***** Latest version is: $getVersion"
-sleep 2
-if [[ $getVersion -gt $scriptVersion ]]; then
-        echo "***** Found a newer version!"
-        echo "***** Replacing current script with neweer script"
-        mv $0 $0.old #move current to old
-        echo "***** Downloading new version from Github"
-        curl -s $masterBranch/$newVersion # -s hides output
-		chmod 755 $0
-        echo "***** Done, relaunch the script."
-        exit 1
-fi
 }
 
 resetCredFile(){
