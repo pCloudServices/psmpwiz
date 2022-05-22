@@ -1,16 +1,32 @@
 #!/bin/bash
+###########################################################################
+#
+# NAME: CyberArk Privilege Cloud PSMP Install Helper
+#
+# AUTHOR:  Mike Brook <mike.brook@cyberark.com>
+#
+# COMMENT: 
+# This script wraps the PSMP RPM package and helps guide you through installation process.
+#
+###########################################################################
 LIBCHK=psmpparms.sample
 VLTFILE=stvlt.chk
 PSMPENVFILE=psmpenv.chk
 VERSION_PSMP="v12.5" # UPDATE THIS (This is just for UI sake, it doesn't impact anything in the script)
 PSMPLOGS=psmplogs.chk
 
+#colors
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+PURPLE='\033[0;35m'
+NC='\033[0m'
+
 #static
 psmpparms="/var/tmp/psmpparms"
 psmpparmstmp="/var/tmp/psmpparmstmp"
 psmpwizerrorlog="_psmpwizerror.log"
 #github
-scriptVersion="6" #update this locally and github.
+scriptVersion="7" #update this locally and github.
 masterBranch="https://raw.githubusercontent.com/pCloudServices/psmpwiz/master"
 checkVersion="$masterBranch/LatestPSMP.txt" #update this in github
 newVersion="$masterBranch/psmpwiz1250.sh" #update this locally
@@ -34,6 +50,63 @@ then
 fi
 
 #Functions
+#PVWA Calls
+pvwaLogin(){
+rest=$(curl --location -k -m 40 --connect-timeout 20 -s --request POST --w " %{http_code}" "$pvwaURLAPI/Auth/CyberArk/Logon" \
+--header "Content-Type: application/json" \
+--data @<(cat <<EOF
+{
+	"username": "$adminuser",
+	"password": "$adminpass",
+	"concurrentSession": "false"
+}
+EOF
+))
+}
+
+pvwaLogoff(){
+pvwaActivate=$(curl --location -k -m 40 --connect-timeout 20 -s -d "" --request POST --w "%{http_code}" "$pvwaURLAPI/Auth/Logoff" \
+--header "Content-Type: application/json" \
+--header "Authorization: $pvwaHeaders" \
+)
+}
+
+pvwaGetUserId(){
+pvwaGetUser=$(curl --location -k -m 40 --connect-timeout 20 -s --request GET --w " %{http_code}" "$pvwaURLAPI/Users?filter=componentUser\&search=$credUsername" \
+--header "Content-Type: application/json" \
+--header "Authorization: $pvwaHeaders" \
+)
+}
+
+pvwaActivateUser(){
+pvwaActivate=$(curl --location -k -m 40 --connect-timeout 20 -s -d "" --request POST --w "%{http_code}" "$pvwaURLAPI/Users/$userID/Activate" \
+--header "Content-Type: application/json" \
+--header "Authorization: $pvwaHeaders" \
+)
+}
+
+pvwaResetPW(){
+pvwaReset=$(curl --location -k -m 40 --connect-timeout 20 -s --request POST --w " %{http_code}" "$pvwaURLAPI/Users/$userID/ResetPassword" \
+--header "Content-Type: application/json" \
+--header "Authorization: $pvwaHeaders" \
+--data @<(cat <<EOF
+{
+	"id": "$userID",
+	"newPassword": "$randomPW",
+	"concurrentSession": "false"
+}
+EOF
+))
+}
+
+pvwaSystemHealthUser(){
+pvwaSystemHealth=$(curl --location -k -m 40 --connect-timeout 20 -s --request GET --w " %{http_code}" "$pvwaURLAPI/ComponentsMonitoringDetails/SessionManagement" \
+--header "Content-Type: application/json" \
+--header "Authorization: $pvwaHeaders" \
+)
+}
+
+
 PVWAAUTH(){
 read -r -p "*****(Optional) Would you like to validate the entered credentials? this will require you to input your Privilege Cloud Portal URL & Make sure FW is open on 443 [Y/N] " response
 if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]
@@ -44,28 +117,16 @@ if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]
 		
 		#Check if URL belongs to UM env, otherwise use legacy.
 		if [[ $pvwaURL == *"cyberark.cloud"* ]]; then
-			pvwaURLAPI=https://$TrimHTTPs.cyberark.cloud/api/passwordvault/Auth/CyberArk/Logon
+			pvwaURLAPI=https://$TrimHTTPs.cyberark.cloud/api/passwordvault
 		else
-			pvwaURLAPI=https://$TrimHTTPs.privilegecloud.cyberark.com/passwordvault/api/Auth/CyberArk/Logon
+			pvwaURLAPI=https://$TrimHTTPs.privilegecloud.cyberark.com/passwordvault/api
 		fi
 		echo "Making API call to: " $pvwaURLAPI
 		echo "Will timeout in 20s if doens't reach Portal on 443..."
-
-rest=$(curl --location -k -m 40 --connect-timeout 20 -o /dev/null -s --request POST --w "%{http_code}" "$pvwaURLAPI" \
---header "Content-Type: application/json" \
---data @<(cat <<EOF
-{
-	"username": "$adminuser",
-	"password": "$adminpass",
-	"concurrentSession": "false"
-}
-EOF
-))
-
-		echo "HTTP Return Code: " $rest
-
-		if [[ $rest == 200 ]]; then
-		echo "Validation Passed!"
+		#call login
+		pvwaLogin
+		if  [[ `echo $rest | grep "200"` ]]; then
+		echo -e "${GREEN}Validation Passed!${NC}"
 		else 
 			read -r -p "***** Validation Failed, do you want to continue anyway? [Y/N] " response
 			if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]
@@ -82,6 +143,20 @@ EOF
 fi
 }
 
+creds(){
+read -p "Please Enter Privilege Cloud Install Username: " adminuser
+echo " "
+echo "***** Please Enter Privilege Cloud Install User Password and press ENTER *****"
+read -s adminpass
+	if [ -z "$adminpass" ]
+		then
+		echo "password is empty, rerun script"
+		exit 1
+	else
+		adminpw="$(echo -e "${adminpass}" | tr -d '[:space:]')"
+	fi
+}
+
 editPsmpparms(){
 	\cp psmpparms.sample $psmpparms
 	echo "***** Updating the psmpparms file *****"
@@ -92,7 +167,7 @@ editPsmpparms(){
 }
 
 errorLogsPrint(){
-echo "***** Error: Failed to install RPM. Fix the errors and rerun wizard again."
+echo -e "*****${RED} Error: Failed to install RPM. Fix the errors and rerun wizard again.${NC}"
 installlogs=("$PWD"/"$psmpwizerrorlog" "$PWD/psmp_install.log" "$PWD/EnvManager.log")
 
 #copy logs to centralized dir
@@ -120,21 +195,146 @@ done
 }
 
 testGithubVersion(){
-echo "Checking latest version..."
+echo "***** Checking latest version on Github..."
 getVersion=`curl $checkVersion -s`
 
-echo "Script version is: $scriptVersion"
-echo "Latest version is: $getVersion"
+echo "***** Script version is: $scriptVersion"
+echo "***** Latest version is: $getVersion"
+sleep 2
 if [[ $getVersion -gt $scriptVersion ]]; then
-        echo "Found a newer version!"
-        echo "Replacing current script with neweer script"
-        mv $0 $0.old
-        echo "Downloading new version from Github"
-        curl -s $masterBranch/$newVersion
+        echo "***** Found a newer version!"
+        echo "***** Replacing current script with neweer script"
+        mv $0 $0.old #move current to old
+        echo "***** Downloading new version from Github"
+        curl -s $masterBranch/$newVersion # -s hides output
 		chmod 755 $0
-        echo "Done, relaunch the script"
+        echo "***** Done, relaunch the script."
         exit 1
 fi
+}
+
+resetCredFile(){
+#files
+pspmpcredfiles=("/etc/opt/CARKpsmp/vault/psmpappuser.cred" "/etc/opt/CARKpsmp/vault/psmpgwuser.cred")
+pvconfigurationFile="/var/opt/CARKpsmp/temp/PVConfiguration.xml"
+createcredfile="/opt/CARKpsmp/bin/createcredfile"
+clear
+echo "***** To perform this task we must be able to reach your cloud portal (ie; https://mikeb.privilegecloud.cyberark.cloud) via HTTPS/443."
+echo ""
+read -r -p "***** Do you want to continue? [Y/N] " response
+if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]];then
+		echo "***** Selected YES..."
+		#grab pvwa url
+		echo "***** Grabbing PVWA URL from: $pvconfigurationFile"
+			if [ -s $pvconfigurationFile ]; then
+				pvwaURL=`cat $pvconfigurationFile | grep -oP '(?<=ApplicationRoot=").*?(?=")'`
+				echo -e "***** PVWA URL is: ${GREEN}$pvwaURL${NC}"
+				extractSubDomainFromURL=${pvwaURL%%.*}
+				TrimHTTPs=${extractSubDomainFromURL#*//}
+				if [[ $pvwaURL == *"cyberark.cloud"* ]]; then
+					pvwaURLAPI=https://$TrimHTTPs.cyberark.cloud/api/passwordvault
+				else
+					pvwaURLAPI=https://$TrimHTTPs.privilegecloud.cyberark.com/passwordvault/api
+				fi
+			else
+				read -r -p "couldn't grab PVWA URL, please enter it manually (ie; https://mikeb.privilegecloud.cyberark.cloud)." pvwaURL
+				extractSubDomainFromURL=${pvwaURL%%.*}
+				TrimHTTPs=${extractSubDomainFromURL#*//}
+				#Check if URL belongs to UM env, otherwise use legacy.
+				if [[ $pvwaURL == *"cyberark.cloud"* ]]; then
+					pvwaURLAPI=https://$TrimHTTPs.cyberark.cloud/api/passwordvault
+				else
+					pvwaURLAPI=https://$TrimHTTPs.privilegecloud.cyberark.com/passwordvault/api
+				fi
+			fi
+						#PVWA Login
+						echo "***** Establishing connection to PVWA..."
+						# pvwaURLAPI=$pvwaURL/api # Uncomment this if you're using onprem PAS.
+						echo "***** Calling: " $pvwaURLAPI
+						creds # get user input
+						pvwaLogin #call login
+						if  [[ `echo $rest | grep "200"` ]]; then
+							echo -e "*****${GREEN} Connected!${NC}"
+							# grab headers
+							pvwaHeaders=`echo $rest | cut -d' ' -f1 | tr -d '"'`
+						else
+							echo -e "***** ${RED}Connection failed...${NC}"
+							echo $rest
+							echo -e "***** ${RED}Unable to proceed, fix connection to PVWA and rerun the script.${NC}"
+							exit 1
+						fi
+		
+			for n in ${pspmpcredfiles[@]} #both app and gw
+				do
+					echo "***** Generating CredFile: $n"
+					if [ -s $n ]; then  #check file not empty
+						credUsername=`cat $n | grep -oP '(?<=Username=).*(?=)'`
+						echo -e "***** Grabbed username: ${PURPLE}$credUsername${NC}"
+						#generate random temp pw from 2 methods and combine them to create a strong pw.
+						randomPW1=`tr -dc A-Za-z0-9 </dev/urandom | head -c 13 ; echo ''`
+						randomPW2=`date | md5sum` && randomPWtrim=`echo $randomPW2 | cut -d' ' -f1`
+						randomPW="${randomPW1}${randomPWtrim::-27}" #-27 to avoid the 39 char limit and repeating chars.
+						$createcredfile $n Password -Username "$credUsername" -Password "$randomPW" -EntropyFile
+						#get user ID
+						echo "***** Retrieving UserID for user $credUsername"
+						pvwaURLAPI=$pvwaURL/api #not sure about this in the final version.
+						pvwaGetUserId
+						userID=`echo $pvwaGetUser | grep -oP '(?<="id":).*?(?=,)'` # grabs user id
+						echo "***** userID: $userID"
+						echo "***** Activating/Unsuspending user: $credUsername just in case."
+						pvwaActivateUser
+						sleep 1
+							if [[ $pvwaActivate == 200 ]]; then
+								echo -e "***** ${GREEN}Successfully Activated: $credUsername${NC}"
+							else
+								echo -e "***** ${RED}Failed Activating: $credUsername${NC}"
+								echo $pvwaActivate
+								exit 1
+							fi
+						echo "***** Resetting Password user: $credUsername"
+						pvwaResetPW # call reset pw
+						sleep 1
+							if [[ `echo $pvwaReset | grep "200"` ]]; then
+								echo -e "***** ${GREEN}Successfully Restet Password: $credUsername${NC}"
+							else
+								echo -e "***** ${RED}Failed Resetting Password: $credUsername${NC}"
+								echo $pvwaReset
+								exit 1
+							fi
+					else
+						echo "***** File is empty or corrupted, aborting..."
+						exit 1
+					fi
+				done
+				
+				echo "***** Restarting PSMP Service..."
+				systemctl daemon-reload
+				systemctl restart psmpsrv.service
+				systemctl status psmpsrv.service
+				sleep 5
+				echo "***** Checking to see if service is back online via SystemHealth."
+				pvwaSystemHealthUser
+				# grab only relevant username and cut everything except IsLoggedOn "true" or "false"
+				appName=`echo $credUsername | cut -d'_' -f2` #better to search the exact name instead of with app/gw prefix.
+				status=`echo $pvwaSystemHealth | grep -oP "($appName).*?(?="LastLogonDate")" | grep -oP '(?<="IsLoggedOn":).*?(?=,)'`
+				if [[ `echo $status | grep "true"` ]];then 
+					echo -e "***** ${GREEN}$appName Is : Online!${NC}"
+				else
+					echo -e "***** ${RED}$appName Is : Offline!${NC}"
+					echo -e "***** ${RED}Return call was: $status${NC}"
+					echo -e "***** Something went wrong :( you'll have to reset it manually with CyberArk's help."
+					exit
+				fi
+				# Logoff
+				pvwaLogoff
+exit 1
+						
+else
+	echo "***** Selected NO..."
+	echo "***** Exiting..."
+	exit 1
+fi
+
 }
 
 if [ "$EUID" -ne 0 ]; then
@@ -150,13 +350,15 @@ fi
 
 clear
 echo "--------------------------------------------------------------"
-echo "-----------CyberArk PSMP Installation Wizard ($VERSION_PSMP) -"
-echo "-----------psmpwiz script version "$scriptVersion" -----------"
+echo "----------- CyberArk PSMP Installation Wizard ($VERSION_PSMP) --------"
+echo "----------- psmpwiz script version "$scriptVersion" -------------------------"
 echo "--------------------------------------------------------------"
 
 ########################################################################################
 #------------------------------------Check Previous PSMP------------------------------ #
 ########################################################################################
+# Check new version
+testGithubVersion
 
 #check if previous version is installed and only then compare with new version and suggest upgrade
 if [ -z "$currVersion" ]
@@ -176,17 +378,7 @@ else
 				echo "***** CredFile Creation *****"
 				chmod 755 CreateCredFile
 				echo " "
-				read -p "Please Enter Privilege Cloud Install Username: " adminuser
-				echo " "
-				echo "***** Please Enter Privilege Cloud Install User Password and press ENTER *****"
-				read -s adminpass
-					if [ -z "$adminpass" ]
-						then
-						echo "password is empty, rerun script"
-						exit
-					else
-						adminpw="$(echo -e "${adminpass}" | tr -d '[:space:]')"
-					fi
+				creds # user input creds
 				PVWAAUTH # PVWA CHECK
 				sleep 8
 				./CreateCredFile user.cred Password -Username $adminuser -Password $adminpw -EntropyFile
@@ -198,7 +390,7 @@ else
 					#check if package is installed and if log file contains error.
 					if [[ `rpm -qa | grep CARKpsmp-i` ]] && [[ ! `cat $psmpwizerrorlog | grep error` ]]
 					then 
-						echo "RPM package install successful: $newVersionFile"
+						echo -e "${GREEN}RPM package install successful: $newIntergratedInfraFile${NC}"
 					else
 						errorLogsPrint
 						echo "***** Clearing Credentials *****"
@@ -208,9 +400,9 @@ else
 				sleep 2
 				echo ""
 				rpm -Uvh $newVersionFile &> $psmpwizerrorlog
-					if [[ `rpm -qa | grep CARKpsmp-i` ]] && [[ ! `cat $psmpwizerrorlog | grep error` ]]
+					if [[ `rpm -qa | grep CARKpsmp-1` ]] && [[ ! `cat $psmpwizerrorlog | grep error` ]]
 					then 
-						echo "RPM package install successful: $newVersionFile"
+						echo -e "${GREEN}RPM package install successful: $newVersionFile{$NC}"
 					else
 						errorLogsPrint
 						echo "***** Clearing Credentials *****"
@@ -235,10 +427,10 @@ else
 			fi
 		else
 		if rpm -qa | grep -q $newVersion; then
-			read -r -p "***** PSMP Already installed, would you like to Repair/Uninstall? [Y/N] " response
+			read -r -p "***** PSMP Already installed, would you like to Repair/ResetCred/Uninstall? [Y/N] " response
 			if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]] 
 			then
-				read -r -p "***** Type 'R' to Repair or 'U' to Uninstall: " response
+				read -r -p "***** Type 'R' to Repair ||| 'U' to Uninstall ||| 'C' to ResetCred " response
 				if [[ $response =~ ^([rR|[rR])$ ]]
 				then
 					################################### psmpparms
@@ -247,17 +439,7 @@ else
 					echo "***** CredFile Creation *****"
 					chmod 755 CreateCredFile
 					echo " "
-					read -p "Please Enter Privilege Cloud Install Username: " adminuser
-					echo " "
-					echo "***** Please Enter Privilege Cloud Install Username Password and press ENTER *****"
-					read -s adminpass
-						if [ -z "$adminpass" ]
-							then
-							echo "password is empty, rerun script"
-							exit
-						else
-							adminpw="$(echo -e "${adminpass}" | tr -d '[:space:]')"
-						fi
+					creds # user input creds 
 					PVWAAUTH # PVWA CHECK
 					sleep 8
 					./CreateCredFile user.cred Password -Username $adminuser -Password $adminpass -EntropyFile
@@ -289,11 +471,13 @@ else
 					
 					exit
 				fi
-					if [[ $response =~ ^([uU|[uU])$ ]]
-					then 
+					if [[ $response =~ ^([uU|[uU])$ ]];then 
 						rpm -e $package_to_remove	
 						sleep 1
 						exit
+					fi
+					if [[ $response =~ ^([cC|[cC])$ ]];then
+						resetCredFile
 					fi
 				else exit 
 			fi 
@@ -387,17 +571,7 @@ clear
 echo "***** CredFile Creation *****"
 chmod 755 CreateCredFile
 echo " "
-read -p "Please Enter Privilege Cloud Install Username: " adminuser
-echo " "
-echo "***** Please Enter Privilege Cloud Install Username Password and press ENTER *****"
-read -s adminpass
-	if [ -z "$adminpass" ]
-	then
-        echo "password is empty, rerun script"
-		exit
-	else
-        adminpw="$(echo -e "${adminpass}" | tr -d '[:space:]')"
-	fi
+creds # user input creds
 PVWAAUTH # PVWA CHECK
 sleep 8
 ./CreateCredFile user.cred Password -Username $adminuser -Password $adminpw -EntropyFile
