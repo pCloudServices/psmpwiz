@@ -26,7 +26,7 @@ psmpparms="/var/tmp/psmpparms"
 psmpparmstmp="/var/tmp/psmpparmstmp"
 psmpwizerrorlog="_psmpwizerror.log"
 #github
-scriptVersion="7" #update this locally and github.
+scriptVersion="8" #update this locally and github.
 scriptFileName="psmpwiz1250.sh"
 masterBranch="https://raw.githubusercontent.com/pCloudServices/psmpwiz/master"
 checkVersion="$masterBranch/LatestPSMP.txt" #update this in github
@@ -53,11 +53,17 @@ fi
 #Functions
 testGithubVersion(){
 echo "***** Checking latest version on Github..."
-getVersion=`curl $checkVersion -s`
+echo "***** If this takes long time (DNS resolve), you can run the script with the flag -skip to skip this check...."
+getVersion=`curl --max-time 3 -s $checkVersion`
 
-echo "***** Script version is: $scriptVersion"
-echo "***** Latest version is: $getVersion"
-sleep 2
+if [[ $getVersion ]]; then
+	echo "***** Script version is: $scriptVersion"
+	echo "***** Latest version is: $getVersion"
+	sleep 2
+else
+	echo "***** Couldn't reach github to check for latest version, that's ok! skipping..."
+	sleep 2
+fi 
 if [[ $getVersion -gt $scriptVersion ]]; then
         echo "***** Found a newer version!"
         echo "***** Replacing current script with neweer script"
@@ -72,7 +78,7 @@ fi
 
 #PVWA Calls
 pvwaLogin(){
-rest=$(curl --location -k -m 40 --connect-timeout 20 -s --request POST --w " %{http_code}" "$pvwaURLAPI/Auth/CyberArk/Logon" \
+rest=$(curl --location -k -m 40 --connect-timeout 5 -s --request POST --w " %{http_code}" "$pvwaURLAPI/Auth/CyberArk/Logon" \
 --header "Content-Type: application/json" \
 --data @<(cat <<EOF
 {
@@ -85,28 +91,28 @@ EOF
 }
 
 pvwaLogoff(){
-pvwaActivate=$(curl --location -k -m 40 --connect-timeout 20 -s -d "" --request POST --w "%{http_code}" "$pvwaURLAPI/Auth/Logoff" \
+pvwaActivate=$(curl --location -k -m 40 --connect-timeout 5 -s -d "" --request POST --w "%{http_code}" "$pvwaURLAPI/Auth/Logoff" \
 --header "Content-Type: application/json" \
 --header "Authorization: $pvwaHeaders" \
 )
 }
 
 pvwaGetUserId(){
-pvwaGetUser=$(curl --location -k -m 40 --connect-timeout 20 -s --request GET --w " %{http_code}" "$pvwaURLAPI/Users?filter=componentUser\&search=$credUsername" \
+pvwaGetUser=$(curl --location -k -m 40 --connect-timeout 5 -s --request GET --w " %{http_code}" "$pvwaURLAPI/Users?filter=componentUser\&search=$credUsername" \
 --header "Content-Type: application/json" \
 --header "Authorization: $pvwaHeaders" \
 )
 }
 
 pvwaActivateUser(){
-pvwaActivate=$(curl --location -k -m 40 --connect-timeout 20 -s -d "" --request POST --w "%{http_code}" "$pvwaURLAPI/Users/$userID/Activate" \
+pvwaActivate=$(curl --location -k -m 40 --connect-timeout 5 -s -d "" --request POST --w "%{http_code}" "$pvwaURLAPI/Users/$userID/Activate" \
 --header "Content-Type: application/json" \
 --header "Authorization: $pvwaHeaders" \
 )
 }
 
 pvwaResetPW(){
-pvwaReset=$(curl --location -k -m 40 --connect-timeout 20 -s --request POST --w " %{http_code}" "$pvwaURLAPI/Users/$userID/ResetPassword" \
+pvwaReset=$(curl --location -k -m 40 --connect-timeout 5 -s --request POST --w " %{http_code}" "$pvwaURLAPI/Users/$userID/ResetPassword" \
 --header "Content-Type: application/json" \
 --header "Authorization: $pvwaHeaders" \
 --data @<(cat <<EOF
@@ -120,7 +126,7 @@ EOF
 }
 
 pvwaSystemHealthUser(){
-pvwaSystemHealth=$(curl --location -k -m 40 --connect-timeout 20 -s --request GET --w " %{http_code}" "$pvwaURLAPI/ComponentsMonitoringDetails/SessionManagement" \
+pvwaSystemHealth=$(curl --location -k -m 40 --connect-timeout 5 -s --request GET --w " %{http_code}" "$pvwaURLAPI/ComponentsMonitoringDetails/SessionManagement" \
 --header "Content-Type: application/json" \
 --header "Authorization: $pvwaHeaders" \
 )
@@ -358,8 +364,23 @@ echo "--------------------------------------------------------------"
 ########################################################################################
 #------------------------------------Check Previous PSMP------------------------------ #
 ########################################################################################
-# Check new version
+# skip new version
+while test $# -gt 0; do
+  case "$1" in
+    -skip*)
+		testGithubVersion(){ echo "***** Skipped online version check." ; } #nullify the function so its not called out down the road.
+      shift
+      ;;
+    *)
+		# Placeholder for future flags
+      break
+      ;;
+  esac
+done
+# Get new version from github
 testGithubVersion
+
+
 
 #check if previous version is installed and only then compare with new version and suggest upgrade
 if [ -z "$currVersion" ]
@@ -446,6 +467,7 @@ else
 					./CreateCredFile user.cred Password -Username $adminuser -Password $adminpass -EntropyFile
 					echo ""
 					echo ""
+					echo "***** Start repair, this may take some time..."
 					rpm -Uvh --force $newVersionFile  &> $psmpwizerrorlog #Repair
 						if [[ ! `cat $psmpwizerrorlog | grep error` ]]
 						then 
