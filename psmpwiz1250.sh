@@ -66,7 +66,7 @@ else
 fi 
 if [[ $getVersion -gt $scriptVersion ]]; then
         echo "***** Found a newer version!"
-        echo "***** Replacing current script with neweer script"
+        echo "***** Replacing current script with newer script"
         mv $0 $0.old #move current to old
         echo "***** Downloading new version from Github"
         curl -s $newScriptVersion -o $scriptFileName # -s hides output
