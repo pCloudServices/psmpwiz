@@ -38,7 +38,7 @@ newLibSSHFile="libssh-0.9.4.x86_64.rpm"
 newIntergratedInfraFile="CARKpsmp-infra-12.06.0.26.x86_64.rpm"
 
 #packagenames (this goes with every -qa command)
-newVersion="CARKpsmp-12.06.0-26.x86_64.rpm" #UPDATE this to the latest version always (It's usually diff than the .rpm file we define above, it has dash instead of dot.)
+newVersion="CARKpsmp-12.06.0-26.x86_64" #UPDATE this to the latest version always (It's usually diff than the .rpm file we define above, it has dash instead of dot.)
 currVersion=`rpm -qa | grep CARKpsmp-1` #this grabs only CARKpsmp because of the "-1" (ie 11.05, 12.01, 12.02) to get accurate single package return
 package_to_remove=`rpm -qa | grep CARKpsmp` #this grabs both CARKpsmp and Infra, to make sure we delete everything.
 
