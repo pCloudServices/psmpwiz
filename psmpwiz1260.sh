@@ -26,10 +26,10 @@ psmpparms="/var/tmp/psmpparms"
 psmpparmstmp="/var/tmp/psmpparmstmp"
 psmpwizerrorlog="_psmpwizerror.log"
 #github
-scriptVersion="8" #update this locally and github.
+scriptVersion="1" #update this locally and github.
 scriptFileName="psmpwiz1260.sh"
 masterBranch="https://raw.githubusercontent.com/pCloudServices/psmpwiz/master"
-checkVersion="$masterBranch/LatestPSMP.txt" #update this in github
+checkVersion="$masterBranch/LatestPSMP1260.txt" #update this in github
 newScriptVersion="$masterBranch/$scriptFileName" #update this locally
 
 #filenames (because package is different than actual file) - this goes with every -ivh/Uvh command
