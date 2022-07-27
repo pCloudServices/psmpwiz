@@ -405,7 +405,7 @@ else
 				sleep 8
 				./CreateCredFile user.cred Password -Username $adminuser -Password $adminpw -EntropyFile
 				echo ""
-				echo "'"
+				echo ""
 				#Upgrade command
 				rpm --import RPM-GPG-KEY-CyberArk
 				rpm -Uvh ./IntegratedMode/$newIntergratedInfraFile &> $psmpwizerrorlog
