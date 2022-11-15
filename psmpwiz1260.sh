@@ -26,7 +26,7 @@ psmpparms="/var/tmp/psmpparms"
 psmpparmstmp="/var/tmp/psmpparmstmp"
 psmpwizerrorlog="_psmpwizerror.log"
 #github
-scriptVersion="1" #update this locally and github.
+scriptVersion="3" #update this locally and github.
 scriptFileName="psmpwiz1260.sh"
 masterBranch="https://raw.githubusercontent.com/pCloudServices/psmpwiz/master"
 checkVersion="$masterBranch/LatestPSMP1260.txt" #update this in github
