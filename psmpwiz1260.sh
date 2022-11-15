@@ -143,7 +143,7 @@ if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]
 		
 		#Check if URL belongs to UM env, otherwise use legacy.
 		if [[ $pvwaURL == *"cyberark.cloud"* ]]; then
-			pvwaURLAPI=https://$TrimHTTPs.cyberark.cloud/api/passwordvault
+			pvwaURLAPI=https://$TrimHTTPs.privilegecloud.cyberark.cloud/passwordvault/api
 		else
 			pvwaURLAPI=https://$TrimHTTPs.privilegecloud.cyberark.com/passwordvault/api
 		fi
