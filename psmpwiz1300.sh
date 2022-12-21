@@ -471,7 +471,7 @@ else
 					rpm -Uvh --force $newVersionFile  &> $psmpwizerrorlog #Repair
 						if [[ ! `cat $psmpwizerrorlog | grep error` ]]
 						then 
-							echo "RPM package install successful: $newVersionFile"
+							echo -e "${GREEN}RPM package install successful: $newVersionFile${NC}"
 						else
 							errorLogsPrint
 							echo "***** Clearing Credentials *****"
@@ -610,7 +610,7 @@ echo "***** Installing: $newIntergratedInfraFile"
 rpm -ivh ./IntegratedMode/$newIntergratedInfraFile &> $psmpwizerrorlog
 	if [[ `rpm -qa | grep CARKpsmp-i` ]] && [[ ! `cat $psmpwizerrorlog | grep error` ]] #package must be installed and no errors in log
 	then 
-		echo "***** ${GREEN}RPM package install successful: $newIntergratedInfraFile${NC}"
+		echo -e "***** ${GREEN}RPM package install successful: $newIntergratedInfraFile${NC}"
 	else
 		errorLogsPrint
 		echo ""
@@ -626,7 +626,7 @@ echo "***** Installing: $newVersionFile"
 rpm -ivh $newVersionFile &> $psmpwizerrorlog
 	if [[ `rpm -qa | grep CARKpsmp-1` ]] && [[ ! `cat $psmpwizerrorlog | grep error` ]]
 	then 
-		echo "***** RPM package install successful: $newVersionFile"
+		echo -e "***** ${GREEN}RPM package install successful: $newVersionFile${NC}"
 	else
 		errorLogsPrint
 		echo ""
