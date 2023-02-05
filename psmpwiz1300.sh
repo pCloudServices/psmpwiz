@@ -20,13 +20,14 @@ GREEN='\033[0;32m'
 RED='\033[0;31m'
 PURPLE='\033[0;35m'
 NC='\033[0m'
+YELLOW='\033[0;33m'
 
 #static
 psmpparms="/var/tmp/psmpparms"
 psmpparmstmp="/var/tmp/psmpparmstmp"
 psmpwizerrorlog="_psmpwizerror.log"
 #github
-scriptVersion="1" #update this locally and github.
+scriptVersion="3" #update this locally and github.
 scriptFileName="psmpwiz1300.sh"
 masterBranch="https://raw.githubusercontent.com/pCloudServices/psmpwiz/master"
 checkVersion="$masterBranch/LatestPSMP1300.txt" #update this in github
@@ -183,6 +184,31 @@ read -s adminpass
 	fi
 }
 
+createUserCred(){
+# Check if file already exists
+if [ -f "user.cred" ]; then # file already exists 
+	echo -e "***** ${YELLOW}Detected 'user.cred' file already exists, if you created it manually press 'Y' otherwise press 'N' and we will recreate it.${NC}"
+	read -r -p  "***** Your response? 'Y' or 'N': " response
+	if [[ $response =~ ^([nN][eE][sS]|[nN])$ ]]
+		then
+		echo "***** Selected 'N', recreating user credential file..."
+		./CreateCredFile user.cred Password -Username $adminuser -Password $adminpass -EntropyFile
+		# Check if cred file was created
+		if [ ! -f "user.cred" ]; then # file was not created
+			echo "***** Couldn't create cred file 'user.cred' from the credentials you've entered, most likely due to permission issue, try doing it manually."
+			echo "./CreateCredFile user.cred Password -Username <YourInstallUsernameHere> -Password <YourInstallPWHere> -EntropyFile"
+			echo "***** Exiting..."
+			exit
+		fi
+	fi
+else
+	# file doesn't exist, lets create it.
+	./CreateCredFile user.cred Password -Username $adminuser -Password $adminpass -EntropyFile
+fi
+
+
+}
+
 editPsmpparms(){
 	\cp psmpparms.sample $psmpparms
 	echo "***** Updating the psmpparms file *****"
@@ -330,6 +356,7 @@ if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]];then
 					echo -e "***** ${RED}$appName Is : Offline!${NC}"
 					echo -e "***** ${RED}Return call was: $status${NC}"
 					echo -e "***** Something went wrong :( you'll have to reset it manually with CyberArk's help."
+					pvwaLogoff
 					exit
 				fi
 				# Logoff
@@ -349,9 +376,16 @@ if [ "$EUID" -ne 0 ]; then
   exit
 fi
 
+# check we are not running from /tmp/ folder, its notorious for permission issues.
+if [[ $PWD = /tmp ]] || [[ $PWD = /tmp/* ]] ; then
+	read -p "***** Detected /tmp folder, it is known for problematic permission issues during install, move the install folder to a different path (example /home/) and retry..."
+	exit
+fi 
+
+# Check psmpparms.sample file exists in script dir, so we know we are in the right place.
 if [ ! -f "$LIBCHK" ]; then
-  echo "***** Please run the script from the PSMP installation folder"
-  read -p "***** - Press ENTER to continue..."
+  echo "***** can't find file: $LIBCHK are we in the correct installation folder?"
+  read -p "***** - Press ENTER to exit..."
   exit 1
 fi
 
@@ -403,7 +437,7 @@ else
 				creds # user input creds
 				PVWAAUTH # PVWA CHECK
 				sleep 8
-				./CreateCredFile user.cred Password -Username $adminuser -Password $adminpw -EntropyFile
+				createUserCred # create user cred file
 				echo ""
 				echo ""
 				#Upgrade command
@@ -464,7 +498,7 @@ else
 					creds # user input creds 
 					PVWAAUTH # PVWA CHECK
 					sleep 8
-					./CreateCredFile user.cred Password -Username $adminuser -Password $adminpass -EntropyFile
+					createUserCred # create user cred file
 					echo ""
 					echo ""
 					echo "***** Start repair, this may take some time..."
@@ -597,7 +631,7 @@ echo " "
 creds # user input creds
 PVWAAUTH # PVWA CHECK
 sleep 8
-./CreateCredFile user.cred Password -Username $adminuser -Password $adminpw -EntropyFile
+createUserCred # create user cred file
 echo ""
 echo ""
 
