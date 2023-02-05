@@ -204,6 +204,13 @@ if [ -f "user.cred" ]; then # file already exists
 else
 	# file doesn't exist, lets create it.
 	./CreateCredFile user.cred Password -Username $adminuser -Password $adminpass -EntropyFile
+	# Check if cred file was created
+	if [ ! -f "user.cred" ]; then # file was not created
+		echo -e "***** ${RED}Couldn't create cred file 'user.cred' from the credentials you've entered, most likely due to permission issue, try doing it manually.${NC}"
+		echo -e "***** ${RED}Example Command: ./CreateCredFile user.cred Password -Username <YourInstallUsernameHere> -Password <YourInstallPWHere> -EntropyFile${NC}"
+		echo -e "***** ${RED}Exiting...${NC}"
+		exit
+	fi
 fi
 }
 
