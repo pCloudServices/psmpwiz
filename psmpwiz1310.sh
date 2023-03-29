@@ -99,7 +99,7 @@ pvwaActivate=$(curl --location -k -m 40 --connect-timeout 5 -s -d "" --request P
 }
 
 pvwaGetUserId(){
-pvwaGetUser=$(curl --location -k -m 40 --connect-timeout 5 -s --request GET --w " %{http_code}" "$pvwaURLAPI/Users?filter=componentUser\&search=$credUsername\&userType=PSMPServer" \
+pvwaGetUser=$(curl --location -k -m 40 --connect-timeout 5 -s --request GET --w " %{http_code}" "$pvwaURLAPI/Users?filter=componentUser\&search=$credUsername&UserType=PSMPServer" \
 --header "Content-Type: application/json" \
 --header "Authorization: $pvwaHeaders" \
 )
@@ -460,7 +460,7 @@ then
 	randomPW="${randomPW1}${randomPWtrim::-23}" 
 	echo $randomPW | passwd --stdin $psmpuser --force > /dev/null 2>&1
 	checkForError
-	echo -e "**** ${PURPLE} ******** SAVE THE PASSWORD BEFORE PROCEEDING ********:${NC}"
+	echo -e "**** ${PURPLE} * SAVE THE PASSWORD BEFORE PROCEEDING *:${NC}"
 	echo -e "${PURPLE}User:${NC} '$psmpuser'"
 	echo -e "${PURPLE}Password:${NC} '${randomPW}'"
 	read -p "**** Ready to proceed? Press ENTER"
