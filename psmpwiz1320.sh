@@ -12,7 +12,7 @@
 LIBCHK=psmpparms.sample
 VLTFILE=stvlt.chk
 PSMPENVFILE=psmpenv.chk
-VERSION_PSMP="v13.1" # UPDATE THIS (This is just for UI sake, it doesn't impact anything in the script)
+VERSION_PSMP="v13.2" # UPDATE THIS (This is just for UI sake, it doesn't impact anything in the script)
 PSMPLOGS=psmplogs.chk
 
 #colors
@@ -137,7 +137,11 @@ PVWAAUTH(){
 read -r -p "*****(Optional) Would you like to validate the entered credentials? this will require you to input your Privilege Cloud Portal URL & Make sure FW is open on 443 [Y/N] " response
 if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]
 	then
-		read -r -p "Please enter your Privilege Cloud Portal URL (eg; https://mikeb.cyberark.cloud): " pvwaURL
+		# if pvwaURL is empty, prompt for pvwa, otherwise use it from previous call.
+		if [[ ! $pvwaURL ]];
+		then
+			read -r -p "Please enter your Privilege Cloud Portal URL (eg; https://mikeb.cyberark.cloud): " pvwaURL
+		fi
 		extractSubDomainFromURL=${pvwaURL%%.*}
 		TrimHTTPs=${extractSubDomainFromURL#*//}
 		
@@ -693,6 +697,8 @@ else
 					if [[ $response =~ ^([uU|[uU])$ ]];then 
 						rpm -e $package_to_remove	
 						sleep 1
+						echo "Note: for a complete uninstall, you must also remove application service users from the vault, reach out to CyberArk Support."
+						# TODO also remove users in backend via api.
 						exit
 					fi
 					if [[ $response =~ ^([cC|[cC])$ ]];then
@@ -729,62 +735,70 @@ disableNSCD
 
 if [ ! -f "$VLTFILE" ]; then
 ################################### VaultIP
-a=0
-while [ $a -lt 1 ]
-do
-echo ""
-read -p "Insert Vault Address (eg; vault-mikeb.privilegecloud.cyberark.cloud): " vaultip
-echo "---------------------------------"
-echo "***** Vault Configuration: ******"
-echo "** Vault Address: $vaultip "
-read -r -p "***** Please confirm: [Y/N] " response
-if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]
-then
-    echo "***** Done..."
-    a=`expr $a + 1`
-else
- echo "Please Try Again..."
-fi
-done
+	echo ""
+		if [[ ! $pvwaURL ]];
+		then
+			read -r -p "Please enter your Privilege Cloud Portal URL (eg; https://mikeb.cyberark.cloud): " pvwaURL
+		fi
+		extractSubDomainFromURL=${pvwaURL%%.*}
+		TrimHTTPs=${extractSubDomainFromURL#*//}
+		#Check if URL belongs to UM env, otherwise use legacy.
+		if [[ $pvwaURL == *"cyberark.cloud"* ]]; then
+			vaultip=vault-$TrimHTTPs.privilegecloud.cyberark.cloud
+		else
+			vaultip=vault-$TrimHTTPs.privilegecloud.cyberark.com
+		fi
+	
+	echo "---------------------------------"
+	echo "***** Vault Configuration *****"
+	echo -e "***** ${GREEN}Vault Address:${NC} $vaultip "
+	read -r -p "***** Please confirm: [Y/N] " response
+	if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]
+	then
+		echo "***** Done..."
+	else
+		echo "Chosen NO, offering to input manually.."
+		read -p "Enter Vault Address: " vaultip
+	fi
 
 ################################### Connectivity test
 #save connection output to file
-rm -rf /tmp/capture.out
-cap () { tee /tmp/capture.out; }
-
-echo "***** Connectivity test *****"
-echo ""
-read -r -p "***** Do you want to perform connectivity test to: $vaultip [Y/N] " response
-if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]
-then
-    echo "***** Waiting for Vault response..."
-		timeout 3 bash -c '</dev/tcp/'$vaultip'/1858' && echo port is open | cap || echo port is closed | cap
-		ret=$(cat /tmp/capture.out) #get result from connection test
-		clear
-		if [[ "echo $ret" == *"open"* ]];
-		then 
-			echo "***** Connectivity test - *** PASSED ***"
-		else
-			echo "***** Connectivity test - *** FAILED ***"
-			echo "***** Recommendation: check your network configuration and re-run the installation script"	
-			read -r -p "***** Do you want to continue anyway? to: $vaultip [Y/N] " response
-				if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]
-					then
-						echo "Connectivity test - skipped"
-					else
-						echo "***** Please check your network configuration and re-run the installation script"			
-						exit 1
-				fi
-  	
+	rm -rf /tmp/capture.out
+	cap () { tee /tmp/capture.out; }
+	
+	echo "***** Connectivity test *****"
+	echo ""
+	read -r -p "***** Do you want to perform connectivity test to: $vaultip [Y/N] " response
+	if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]
+	then
+		echo "***** Waiting for Vault response..."
+			timeout 3 bash -c '</dev/tcp/'$vaultip'/1858' && echo port is open | cap || echo port is closed | cap
+			ret=$(cat /tmp/capture.out) #get result from connection test
+			clear
+			if [[ "echo $ret" == *"open"* ]];
+			then 
+				echo "***** Connectivity test - *** PASSED ***"
+			else
+				echo "***** Connectivity test - *** FAILED ***"
+				echo "***** Recommendation: check your network configuration and re-run the installation script"	
+				read -r -p "***** Do you want to continue anyway? to: $vaultip [Y/N] " response
+					if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]
+						then
+							echo "Connectivity test - skipped"
+						else
+							echo "***** Please check your network configuration and re-run the installation script"			
+							exit 1
+					fi
+		
+		fi
+	else
+	echo "Connectivity test - skipped"
 	fi
-else
- echo "Connectivity test - skipped"
-fi
 
 
 ################################### Vault.ini
-sed -i "s/1.1.1.1/"$vaultip"/g" vault.ini
-echo "vault.ini updated" > stvlt.chk
+	sed -i "s/1.1.1.1/"$vaultip"/g" vault.ini
+	echo "vault.ini updated" > stvlt.chk
 fi
 
 ################################### psmpparms
