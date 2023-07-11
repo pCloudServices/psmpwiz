@@ -137,7 +137,7 @@ PVWAAUTH(){
 read -r -p "*****(Optional) Would you like to validate the entered credentials? this will require you to input your Privilege Cloud Portal URL & Make sure FW is open on 443 [Y/N] " response
 if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]
 	then
-		read -r -p "Please enter your Privilege Cloud Portal URL: " pvwaURL
+		read -r -p "Please enter your Privilege Cloud Portal URL (eg; https://mikeb.cyberark.cloud): " pvwaURL
 		extractSubDomainFromURL=${pvwaURL%%.*}
 		TrimHTTPs=${extractSubDomainFromURL#*//}
 		
@@ -445,13 +445,13 @@ then
 	}
 	
 	# Create user
-	msg="**** Creating user '$psmpuser':"
+	msg="**** Creating user '$psmpuser'..."
 	echo -ne "$msg" && sleep 2
 	adduser $psmpuser
 	checkForError
 	
 	# Create password
-	msg="**** Generating strong password for user:"
+	msg="**** Generating strong password for user..."
 	echo -ne "$msg" && sleep 2
 	#generate random temp pw from 2 methods and combine them to create a strong pw.
 	randomPW1=`tr -dc A-Za-z0-9 </dev/urandom | head -c 13 ; echo ''`
@@ -465,13 +465,13 @@ then
 	read -p "**** Ready to proceed? Press ENTER"
 	
 	# Create group
-	msg="**** Creating group '$psmpgroup':"
+	msg="**** Creating group '$psmpgroup'..."
 	echo -ne "$msg" && sleep 2
 	groupadd $psmpgroup
 	checkForError
 	
 	# Add user to group
-	msg="**** Adding new user to new group"
+	msg="**** Adding new user to new group..."
 	echo -ne "$msg" && sleep 2
 	usermod -a -G $psmpgroup $psmpuser
 	checkForError
@@ -733,7 +733,7 @@ a=0
 while [ $a -lt 1 ]
 do
 echo ""
-read -p "Insert Vault Address: " vaultip
+read -p "Insert Vault Address (eg; vault-mikeb.privilegecloud.cyberark.cloud): " vaultip
 echo "---------------------------------"
 echo "***** Vault Configuration: ******"
 echo "** Vault Address: $vaultip "
@@ -843,7 +843,7 @@ rpm -ivh $newVersionFile &> $psmpwizerrorlog
 		exit 1
 	fi
 
-clear
+
 echo ""
 
 systemctl daemon-reload
