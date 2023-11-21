@@ -26,9 +26,10 @@ YELLOW='\033[0;33m'
 psmpparms="/var/tmp/psmpparms"
 psmpparmstmp="/var/tmp/psmpparmstmp"
 psmpwizerrorlog="_psmpwizerror.log"
+minimalFolderSize="150M" # This is used to make sure download is not corrupted, the number is just a ballpark number I chose, typically installs are 170mb+
 #github
-scriptVersion="1"               #update this locally and github.
-scriptFileName="psmpwiz1310.sh" #update this locally
+scriptVersion="2"               #update this locally and github.
+scriptFileName="psmpwiz1320.sh" #update this locally
 masterBranch="https://raw.githubusercontent.com/pCloudServices/psmpwiz/master"
 checkVersion="$masterBranch/LatestPSMP1320.txt" #update this in github
 newScriptVersion="$masterBranch/$scriptFileName"
@@ -415,124 +416,321 @@ maintenanceUsers() {
     psmpgroup="proxymanagers"
     psmpuser="proxymng"
 
-    echo -e "**** ${YELLOW} Please note, after install is completed, machine is hardended and ${PURPLE}ROOT${YELLOW} account will only be able to login through console, not via SSH.${NC}"
-    echo -e "**** ${YELLOW} We recommend setting up maintenace accounts that can be used to login with via SSH. We also recommend onboarding them to CyberArk.${NC}"
-    read -r -p "$(echo -e "**** ${YELLOW} Would you like the script attempt to set it up?: [Y/N] ${NC}")" response
+    echo -e "**** ${YELLOW} Please note, after install is completed, machine is hardened and ${PURPLE}ROOT${YELLOW} account will only be able to login through console, not via SSH.${NC}"
+    echo -e "**** ${YELLOW} We recommend setting up maintenance accounts that can be used to login with via SSH. We also recommend onboarding them to CyberArk.${NC}"
+    read -r -p "$(echo -e "**** ${YELLOW} Would you like the script attempt to set it up?: [Y/N] [Recommended: Yes]: ${NC}")" response
     if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]; then
         echo "**** Chosen YES"
         sleep 1
-
-        # Catch last command exit status, if not 0 then error out.
-        checkForError() {
-            if [[ $? -ne 0 ]]; then
-                echo -ne "\r$msg ${RED}FAIL${NC}"
-                echo ""
-                # proceed to next command anyway
-                read -r -p "**** Proceed anyway? [Y/N] " response
-                if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]; then
-                    echo "Proceeding..."
-                else
-                    echo "Exiting..."
-                    exit
-                fi
+    else
+        echo "**** Chosen NO, proceeding with install."
+        sleep 1
+        echo "**** Remember you can always do this manually:"
+        echo "https://docs.cyberark.com/Product-Doc/OnlineHelp/PrivCloud-SS/Latest/en/Content/PASIMP/Administrating"
+        sleep 1
+		return
+    fi
+    checkForError() {
+        if [[ $? -ne 0 ]]; then
+            echo -ne "\r$msg ${RED}FAIL${NC}"
+            echo ""
+            read -r -p "**** Proceed anyway? [Y/N]: " response
+            if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]; then
+                echo "Proceeding..."
             else
-                echo -ne "\r$msg ${GREEN}PASS${NC}"
-                echo ""
+                echo "Exiting..."
+                exit
             fi
-        }
-
-        # Create user
-        msg="**** Creating user '$psmpuser'..."
-        echo -ne "$msg" && sleep 2
-        adduser $psmpuser
-        checkForError
-
-        # Create password
-        msg="**** Generating strong password for user..."
-        echo -ne "$msg" && sleep 2
-        #generate random temp pw from 2 methods and combine them to create a strong pw.
-        randomPW1=$(
-            tr -dc A-Za-z0-9 </dev/urandom | head -c 13
-            echo ''
-        )
-        randomPW2=$(date | md5sum) && randomPWtrim=$(echo $randomPW2 | cut -d' ' -f1)
-        randomPW="${randomPW1}${randomPWtrim::-23}"
-        echo $randomPW | passwd --stdin $psmpuser --force >/dev/null 2>&1
-        checkForError
-        echo -e "**** ${PURPLE} * SAVE THE PASSWORD BEFORE PROCEEDING *:${NC}"
-        echo -e "${PURPLE}User:${NC} '$psmpuser'"
-        echo -e "${PURPLE}Password:${NC} '${randomPW}'"
-        read -p "**** Ready to proceed? Press ENTER"
-
-        # Create group
-        msg="**** Creating group '$psmpgroup'..."
-        echo -ne "$msg" && sleep 2
-        groupadd $psmpgroup
-        checkForError
-
-        # Add user to group
-        msg="**** Adding new user to new group..."
-        echo -ne "$msg" && sleep 2
-        usermod -a -G $psmpgroup $psmpuser
-        checkForError
-
-        # Configure sshd_config
-        echo -e "**** Let's edit $sshdfile to allow group to connect post hardening." && sleep 2
-        # This will find AllowGroups and then in the same line try to find PSMConnectUsers, if true then both were found.
-        allowgroupsexist=$(egrep -w -E -s "^AllowGroups" $sshdfile | grep "$psmusers") # '^' will ignore # (hashtags) to avoid commented lines.
-        onlyallowgroupsexist=$(egrep -w -E -s "^AllowGroups" $sshdfile)                # '^' will ignore # (hashtags) to avoid commented lines.
-
-        echo "**** Checking if $psmusers were already configured with AllowGroups under $sshdfile..."
-        # check if allowgroups and PSMConnectUsers exists in the same line
-        if [[ $allowgroupsexist ]]; then
-            echo -e "**** ${GREEN}Group is already defined, nothing to do here.${NC}"
         else
-            echo -e "**** Not found, let's backup the file and modify it with our settings.."
-            \cp $sshdfile $sshdfile.orig # force overwrite
-            if [ ! -f "$sshdfile.orig" ]; then
-                read -r -p "$(echo -e "**** ${RED} Couldn't copy file, proceed anyway? [Y/N] ${NC}")" response
-                if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]; then
-                    echo "**** Proceeding..."
-                else
-                    echo "**** Exiting..."
-                    exit
-                fi
+            echo -ne "\r$msg ${GREEN}PASS${NC}"
+            echo ""
+        fi
+    }
+
+    checkSudoUsage() {
+        local count=0
+
+        echo "**** Checking if sudo is in use..."
+
+        # Check 1: Audit Log Files
+        if grep -q sudo /var/log/auth.log 2>/dev/null || grep -q sudo /var/log/secure 2>/dev/null; then
+            ((count++))
+        fi
+
+        # Check 2: sudoers Configuration
+        if [ -s /etc/sudoers ]; then
+            ((count++))
+        fi
+
+        # Check 3: List Users in sudoers Group
+        if getent group sudo &>/dev/null || getent group wheel &>/dev/null; then
+            ((count++))
+        fi
+
+        # Check 4: Custom sudoers Directories
+        if [ -d /etc/sudoers.d/ ] && [ "$(ls -A /etc/sudoers.d/)" ]; then
+            ((count++))
+        fi
+
+        # Check 5: Check the Environment for SUDO_COMMAND
+        if [ -n "$SUDO_COMMAND" ]; then
+            ((count++))
+        fi
+
+        # If 3 or more checks pass
+        if [ "$count" -ge 3 ]; then
+            echo -e "**** ${YELLOW}determined sudo is enabled and utilized on this environment.${NC}"
+            return 0
+        else
+            return 1
+        fi
+    }
+    checkGroupInSudoers() {
+        local group_name="$1"
+        if grep -qE "^%$group_name" /etc/sudoers /etc/sudoers.d/* 2>/dev/null; then
+            return 0
+        else
+            return 1
+        fi
+    }
+
+    # Create user
+    msg="**** Creating user '$psmpuser'..."
+    echo -ne "$msg" && sleep 2
+    adduser $psmpuser
+    checkForError
+
+    # Create password
+    msg="**** Generating strong password for user..."
+    echo -ne "$msg" && sleep 2
+    #generate random temp pw from 2 methods and combine them to create a strong pw.
+    randomPW1=$(
+        tr -dc A-Za-z0-9 </dev/urandom | head -c 13
+        echo ''
+    )
+    randomPW2=$(date | md5sum) && randomPWtrim=$(echo $randomPW2 | cut -d' ' -f1)
+    randomPW="${randomPW1}${randomPWtrim::-23}"
+    echo $randomPW | passwd --stdin $psmpuser --force >/dev/null 2>&1
+    checkForError
+    echo -e "**** ${PURPLE} * SAVE THE PASSWORD BEFORE PROCEEDING *:${NC}"
+    echo -e "${PURPLE}User:${NC} '$psmpuser'"
+    echo -e "${PURPLE}Password:${NC} '${randomPW}'"
+    read -p "**** Ready to proceed? Press ENTER"
+
+    # Create group
+    msg="**** Creating group '$psmpgroup'..."
+    echo -ne "$msg" && sleep 2
+    groupadd $psmpgroup
+    checkForError
+
+    # Add user to group
+    msg="**** Adding new user to new group..."
+    echo -ne "$msg" && sleep 2
+    usermod -a -G $psmpgroup $psmpuser
+    checkForError
+
+    # Configure sshd_config
+    echo -e "**** Let's edit $sshdfile to allow group to connect post hardening." && sleep 2
+    # This will find AllowGroups and then in the same line try to find PSMConnectUsers, if true then both were found.
+    allowgroupsexist=$(egrep -w -E -s "^AllowGroups" $sshdfile | grep "$psmusers") # '^' will ignore # (hashtags) to avoid commented lines.
+    onlyallowgroupsexist=$(egrep -w -E -s "^AllowGroups" $sshdfile)                # '^' will ignore # (hashtags) to avoid commented lines.
+
+    echo "**** Checking if $psmusers were already configured with AllowGroups under $sshdfile..."
+    # check if allowgroups and PSMConnectUsers exists in the same line
+    if [[ $allowgroupsexist ]]; then
+        echo -e "**** ${GREEN}Group is already defined, nothing to do here.${NC}"
+    else
+        echo -e "**** Not found, let's backup the file and modify it with our settings.."
+        \cp $sshdfile $sshdfile.orig # force overwrite
+        if [ ! -f "$sshdfile.orig" ]; then
+            read -r -p "$(echo -e "**** ${RED} Couldn't copy file, proceed anyway? [Y/N]: ${NC}")" response
+            if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]; then
+                echo "**** Proceeding..."
             else
-                echo "**** File backup is created: $sshdfile.orig"
+                echo "**** Exiting..."
+                exit
             fi
-            echo -e "**** Modifying AllowGroup into $sshdfile..." && sleep 2
-            # if AllowGroups exist and not PSMConnectUsers group, append just PSMConnectUsers
-            if [ ! -z $allowgroupsexist ]; then
-                # Append only PSMConnectUsers & proxymanagers at the end of the line
-                egrep -w -E -s "^AllowGroups" $sshdfile | xargs -I '{}' sed -i '/^AllowGroups/ s/$/ '$psmusers' '$psmpgroup'/' $sshdfile
-            else
-                # Append everything
-                echo "AllowGroups $psmusers $psmpgroup" >>$sshdfile
-            fi
+        else
+            echo "**** File backup is created: $sshdfile.orig"
+        fi
+        echo -e "**** Modifying AllowGroup into $sshdfile..." && sleep 2
+        # if AllowGroups exist and not PSMConnectUsers group, append just PSMConnectUsers
+        if [ ! -z $allowgroupsexist ]; then
+            # Append only PSMConnectUsers & proxymanagers at the end of the line
+            egrep -w -E -s "^AllowGroups" $sshdfile | xargs -I '{}' sed -i '/^AllowGroups/ s/$/ '$psmusers' '$psmpgroup'/' $sshdfile
+        else
+            # Append everything
+            echo "AllowGroups $psmusers $psmpgroup" >>$sshdfile
+        fi
+    fi
+
+        # Check if sudo is actively used and offer to add user to sudoers
+        if checkSudoUsage; then
+			read -r -p "**** Would you like to configure $psmpuser for sudo use? [Y/N] [Recommended: Yes]: " sudo_config_response
+			if [[ $sudo_config_response =~ ^([yY][eE][sS]|[yY])$ ]]; then
+				echo "**** Checking if wheel or sudo groups are part of sudoers..."
+				local sudo_group=""
+				local sudo_exists=false
+				local wheel_exists=false
+	
+				if getent group sudo &>/dev/null && checkGroupInSudoers sudo; then
+					sudo_exists=true
+				fi
+				if getent group wheel &>/dev/null && checkGroupInSudoers wheel; then
+					wheel_exists=true
+				fi
+	
+				if $sudo_exists && $wheel_exists; then
+					echo "Both sudo and wheel groups are available for sudo privileges."
+					read -r -p "**** Which group would you like to add $psmpuser to (sudo/wheel) ? " sudo_group
+					if [[ ! $sudo_group =~ ^(sudo|wheel)$ ]]; then
+						echo "Invalid group. Exiting..."
+						return
+					fi
+				elif $sudo_exists; then
+					sudo_group="sudo"
+					echo "**** sudo group '$sudo_group' exists in sudoers list."
+				elif $wheel_exists; then
+					sudo_group="wheel"
+					echo "**** sudo group '$sudo_group' exists in sudoers list."
+				else
+					echo "**** Neither 'sudo' nor 'wheel' group is configured for sudo privileges."
+					read -r -p "**** Please specify a custom group to add $psmpuser to: " custom_group
+					if getent group "$custom_group" &>/dev/null; then
+						sudo_group="$custom_group"
+					else
+						echo "**** Group '$custom_group' does not exist. Exiting..."
+						return
+					fi
+				fi
+	
+				read -r -p "**** Would you like to add '$psmpuser' to the '$sudo_group' group for sudo privileges? [Y/N] [Recommended: Yes]: " response
+				if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]; then
+					msg="**** Adding $psmpuser to $sudo_group group..."
+					echo -ne "$msg" && sleep 2
+					usermod -a -G $sudo_group $psmpuser
+					checkForError
+					sudoComplete=`echo -e "**** ${GREEN}Added $psmpuser to sudo group: $sudo_group ${NC}"`
+				fi
+			else
+				echo "**** Skipping sudo configuration for $psmpuser."
+			fi	
+        else
+            echo "**** sudo does not seem to be actively used on this system."
+        fi
             echo -e "**** ${GREEN}Done setting up maintenace accounts!${NC}"
             echo -e "**** ${GREEN}Actions Performed:${NC}" && sleep 2
             echo -e "**** ${GREEN}Created User: $psmpuser ${NC}"
             echo -e "**** ${GREEN}Created Group: $psmpgroup ${NC}"
             echo -e "**** ${GREEN}AllowGroups $psmusers $psmpgroup -> Appended to: $sshdfile ${NC}"
+			echo "$sudoComplete"
+}
+
+checkFolderSize() {
+	echo "**** Checking installation folder contents..."
+	# Check folder size of current dir
+	current_size=$(du -sh . | cut -f1)
+	
+	# Check if size is less than minimalFolderSize
+	if [[ $current_size < "$minimalFolderSize" ]]; then
+		echo -e "${YELLOW}The installation folder seems to be too small ($current_size), please make sure it was downloaded and extracted correctly.${NC}"
+		read -r -p "Do you want to continue? Type Yes/No: " response
+		if [[ ! $response =~ ^([yY][eE][sS]|[yY])$ ]]; then
+			read -p "***** - Press ENTER to exit..."
+			exit 1
+		fi
+	fi
+}
+
+checkMinimumFreeDiskSpace () {
+	echo "**** Checking disk space..."
+	free_space_kb=$(df . | awk 'NR==2 {print $4}')
+	
+	# Convert to MB
+	free_space_mb=$((free_space_kb / 1024))
+	
+	# Set minimum required space in MB (1GB)
+	min_space_mb=1024
+	
+	# Check if free space is less than the required space
+	if [ $free_space_mb -lt $min_space_mb ]; then
+		echo -e "${YELLOW}Not enough free space: ${free_space_mb}MB available, but 1GB is required to run the installation.${NC}"
+		echo -e "${YELLOW}You should know that official docs require 80GB of free space.${NC}"
+		read -p "***** - Press ENTER to exit..."
+		exit 1
+	fi
+}
+
+# Check supported OS
+perform_os_checks() {
+    # check if the OS version is within a valid range
+    is_version_valid() {
+        local version=$1
+        local min_version=$2
+        local max_version=$3
+
+        if [[ $(echo -e "$min_version\n$version" | sort -V | head -n1) == "$min_version" && $(echo -e "$max_version\n$version" | sort -V | head -n1) == "$version" ]]; then
+            return 0 # True, version is within range
+        else
+            return 1 # False, version is out of range
         fi
-    else
-        echo "**** Chosen NO, proceeding with install."
-        sleep 2
-        echo "**** Remember you can always do this manually:"
-        echo "https://docs.cyberark.com/Product-Doc/OnlineHelp/PrivCloud-SS/Latest/en/Content/PASIMP/Administrating-the-PSMP.htm#Createamaintenanceuser"
-        sleep 4
-    fi
+    }
+
+    # Prompt the user for decision
+    prompt_user_decision() {
+        read -r -p "The operating system ($PRETTY_NAME) is not officially supported. Do you want to continue? Type Yes/No: " response
+        if [[ ! $response =~ ^([yY][eE][sS]|[yY])$ ]]; then
+			read -p "***** - Press ENTER to exit..."
+			exit 1
+        fi
+    }
+
+    # Get OS information
+    source /etc/os-release
+
+    # Check each distribution and version
+    case $ID in
+        "rhel")
+            if is_version_valid $VERSION_ID 7 7.9 || is_version_valid $VERSION_ID 8 8.8; then
+                echo -e "${GREEN}Running on a supported version: $PRETTY_NAME.${NC}"
+            else
+                echo -e "${RED}Unsupported version: $PRETTY_NAME. Supported versions are Red Hat Enterprise Linux 7 up to 7.9 and 8 up to 8.8."
+                prompt_user_decision
+            fi
+            ;;
+        "centos")
+            if is_version_valid $VERSION_ID 7.9 7.9; then
+                echo -e "${GREEN}Running on a supported version: $PRETTY_NAME.${NC}"
+            else
+                echo -e "${RED}Unsupported version: $PRETTY_NAME. Supported version is CentOS Linux 7.9.${NC}"
+                prompt_user_decision
+            fi
+            ;;
+        "rocky")
+            if is_version_valid $VERSION_ID 8.7 8.8; then
+                echo -e "${GREEN}Running on a supported version: $PRETTY_NAME.${NC}"
+            else
+                echo -e "${RED}Unsupported version: $PRETTY_NAME. Supported versions are Rocky Linux 8.7 and 8.8.${NC}"
+                prompt_user_decision
+            fi
+            ;;
+        *)
+            echo -e "${RED}Unsupported Linux distribution ($PRETTY_NAME).${NC}"
+            prompt_user_decision
+            ;;
+    esac
 }
 
 if [ "$EUID" -ne 0 ]; then
-    read -p "***** Please run as root - Press ENTER to logout..."
-    exit
+    read -p "***** Please run as root - Press ENTER to exit..."
+    exit 1
 fi
 
 # check we are not running from /tmp/ folder, its notorious for permission issues.
 if [[ $PWD = /tmp ]] || [[ $PWD = /tmp/* ]]; then
     read -p "***** Detected /tmp folder, it is known for problematic permission issues during install, move the install folder to a different path (example /home/) and retry..."
-    exit
+	read -p "***** - Press ENTER to exit..."
+    exit 1
 fi
 
 # Check psmpparms.sample file exists in script dir, so we know we are in the right place.
@@ -541,6 +739,9 @@ if [ ! -f "$LIBCHK" ]; then
     read -p "***** - Press ENTER to exit..."
     exit 1
 fi
+
+# Check folder size
+checkFolderSize
 
 echo "--------------------------------------------------------------"
 echo "----------- CyberArk PSMP Installation Wizard ($VERSION_PSMP) --------"
@@ -698,6 +899,12 @@ if [ ! -f "$SYSPRP" ]; then
     #placeholder
     echo ""
 fi
+
+# Check minimum disk space
+checkMinimumFreeDiskSpace
+
+# Check minimum required OS
+perform_os_checks
 
 ########################################################################################
 #---------------------------------------------- PSMP Installation Wizard---------------#
