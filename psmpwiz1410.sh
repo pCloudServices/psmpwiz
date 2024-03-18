@@ -29,11 +29,11 @@ psmpwizerrorlog="_psmpwizerror.log"
 minimalFolderSize="150M" # This is used to make sure download is not corrupted, the number is just a ballpark number I chose, typically installs are 170mb+
 
 #filenames (because package is different than actual file) - this goes with every -ivh/Uvh command
-newVersionFile="CARKpsmp-14.1.0.5.x86_64.rpm"                #update this locally
-newIntergratedInfraFile="CARKpsmp-infra-14.1.0.5.x86_64.rpm" #update this locally
+newVersionFile="CARKpsmp-14.1.1.4.x86_64.rpm"                #update this locally
+newIntergratedInfraFile="CARKpsmp-infra-14.1.1.4.x86_64.rpm" #update this locally
 
 #packagenames (this goes with every -qa command)
-newVersion="CARKpsmp-14.1.0-5.x86_64"       #UPDATE this to the latest version always (It's usually diff than the .rpm file we define above, it has dash instead of dot.)
+newVersion="CARKpsmp-14.1.1-4.x86_64"       #UPDATE this to the latest version always (It's usually diff than the .rpm file we define above, it has dash instead of dot.)
 currVersion=$(rpm -qa | grep CARKpsmp-1)     #this grabs only CARKpsmp because of the "-1" (ie 11.05, 12.01, 12.02) to get accurate single package return
 package_to_remove=$(rpm -qa | grep CARKpsmp) #this grabs both CARKpsmp and Infra, to make sure we delete everything.
 
@@ -598,7 +598,7 @@ maintenanceUsers() {
         else
             echo "**** sudo does not seem to be actively used on this system."
         fi
-            echo -e "**** ${GREEN}Done setting up maintenace accounts!${NC}"
+            echo -e "**** ${GREEN}Done setting up maintenance accounts!${NC}"
             echo -e "**** ${GREEN}Actions Performed:${NC}" && sleep 2
             echo -e "**** ${GREEN}Created User: $psmpuser ${NC}"
             echo -e "**** ${GREEN}Created Group: $psmpgroup ${NC}"
@@ -741,6 +741,7 @@ check_puppet_and_proceed() {
     # Check if the puppet service is active
     if systemctl is-active --quiet puppet; then
         echo -e "${YELLOW}Detected Puppet service, it is known to interfere with PSMP Functionality.${NC}"
+		echo -e "${YELLOW}Documentation about this: https://docs.cyberark.com/PrivCloud-SS/Latest/en/Content/Privilege%20Cloud/privCloud-prerequ-PSM-SSH.htm#Checkprerequisites ${NC}"
         echo -e "${YELLOW}You should either disable it or exclude the following files from being controlled by Puppet:${NC}"
         for file in "${files_to_exclude[@]}"; do
             echo "- $file"
@@ -963,7 +964,7 @@ check_puppet_and_proceed
 # https://docs.cyberark.com/Product-Doc/OnlineHelp/PrivCloud-SS/Latest/en/Content/Privilege%20Cloud/privCloud-prerequ-PSM-SSH.htm#DisableNSCD
 disableNSCD
 
-############## maintenace users
+############## maintenance users
 maintenanceUsers
 
 
@@ -1014,28 +1015,37 @@ maintenanceUsers
 			fi
 			# Check if pvwaURL is a cyberark.cloud and test identity.
 			if [[ $pvwaURL == *".cyberark.cloud"* ]]; then
-				echo -e "*****${YELLOW} Shared Services platform detected, trying to extract Identity URL.${NC}"
+				echo -e "*****${YELLOW} Shared Services platform detected, trying to extract Identity URL from the headers response of '$pvwaURL'.${NC}"
 				# Extract 'Location' URL from the tenant URL
-				#location_url=$(curl -Is $pvwaURL | grep -i Location: | awk '{print $2}' | tr -d '\r')
-				location_url=$(curl -Is $pvwaURL | grep -i Location: | awk '{print $2}' | tr -d '\r' | cut -d'/' -f1,2,3)
-				echo "Extracted Location URL for Identity Connection test: $location_url"
-				read -r -p "***** Do you want to perform Identity connectivity test? [Y/N] " response
-				if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]; then
-					echo "***** Testing connectivity to: $location_url"
-					# Test connection 
-					if curl --output /dev/null --silent --head --fail --connect-timeout 7 "$location_url"; then
-						echo -e "***** Connectivity to $location_url - ${GREEN}*** PASSED ***${NC}"
-					else
-						echo -e "***** Connectivity to $location_url - ${RED}*** FAILED ***${NC}"
-						echo "***** Recommendation: Check your network configuration and re-run the installation script"
-						read -r -p "***** Do you want to continue anyway? [Y/N] " response
-						if [[ ! $response =~ ^([yY][eE][sS]|[yY])$ ]]; then
-							echo "***** Please check your network configuration and re-run the installation script"
-							exit 1
+				location_url=$(curl -Is "$pvwaURL" | grep -i Location: | awk '{print $2}' | tr -d '\r' | cut -d'/' -f1,2,3)			
+				# Check if location_url was successfully extracted
+				if [[ -z $location_url ]]; then
+					echo -e "*****${RED} Failed to automatically extract Identity URL.${NC}"
+					echo -e "***** Please enter the URL manually. (eg; aax4550.id.cyberark.cloud)"
+					read -r -p "Enter Location URL: " location_url
+				fi			
+				if [[ -n $location_url ]]; then
+					echo "Extracted Location URL for Identity Connection test: '$location_url'"
+					read -r -p "***** Do you want to perform Identity connectivity test? [Y/N] " response
+					if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]; then
+						echo "***** Testing connectivity to: $location_url"
+						# Test connection 
+						if curl --output /dev/null --silent --head --fail --connect-timeout 7 "$location_url"; then
+							echo -e "***** Connectivity to $location_url - ${GREEN}*** PASSED ***${NC}"
+						else
+							echo -e "***** Connectivity to $location_url - ${RED}*** FAILED ***${NC}"
+							echo "***** Recommendation: Check your network configuration and re-run the installation script"
+							read -r -p "***** Do you want to continue anyway? [Y/N] " response
+							if [[ ! $response =~ ^([yY][eE][sS]|[yY])$ ]]; then
+								echo "***** Please check your network configuration and re-run the installation script."
+								exit 1
+							fi
 						fi
+					else
+						echo "Identity Connectivity test - skipped"
 					fi
 				else
-					echo "Identity Connectivity test - skipped"
+					echo -e "*****${RED} No Location URL provided. Unable to perform connectivity test.${NC}"
 				fi
 			fi
         else
@@ -1167,8 +1177,8 @@ echo "---- PSMP Installation Wizard Was Completed ----"
 echo "*************************************************************"
 
 echo -e "***** Some tips:" && sleep 2
-echo -e "***** 1. Onboard the maintenace account we've created earlier (if not already). Best practice is to connect to it through the windows PSM component (PSM-SSH Connection Component)." && sleep 2
-echo -e "***** 2. Onboard the Root account of this machine and configure the maintenace account as 'Logon Account' for it (Also as best practice we suggest reducing maint account permissions after you onboard root)." && sleep 2
+echo -e "***** 1. Onboard the maintenance account we've created earlier (if not already). Best practice is to connect to it through the windows PSM component (PSM-SSH Connection Component)." && sleep 2
+echo -e "***** 2. Onboard the Root account of this machine and configure the maintenance account as 'Logon Account' for it (Also as best practice we suggest reducing maint account permissions after you onboard root)." && sleep 2
 echo -e "***** 3. Exlore MFA Caching capabilities: https://docs.cyberark.com/Product-Doc/OnlineHelp/PrivCloud-SS/Latest/en/Content/PASIMP/MFA-Caching.htm" && sleep 2
 echo -e "***** 4. Usage examples for PSMP: https://docs.cyberark.com/Product-Doc/OnlineHelp/PrivCloud-SS/Latest/en/Content/Privilege%20Cloud/privCloud-connect-using-SSH.htm#Usageexamples" && sleep 2
 
