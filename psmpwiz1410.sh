@@ -12,8 +12,10 @@
 LIBCHK=psmpparms.sample
 VLTFILE=stvlt.chk
 PSMPENVFILE=psmpenv.chk
-VERSION_PSMP="v14.1" # UPDATE THIS (This is just for UI sake, it doesn't impact anything in the script)
 PSMPLOGS=psmplogs.chk
+
+VERSION_PSMP="v14.1" # UPDATE THIS (This is just for UI sake, it doesn't impact anything in the script)
+scriptVersion="3" # Script version, only dev should update this.
 
 #colors
 GREEN='\033[0;32m'
@@ -26,7 +28,7 @@ YELLOW='\033[0;33m'
 psmpparms="/var/tmp/psmpparms"
 psmpparmstmp="/var/tmp/psmpparmstmp"
 psmpwizerrorlog="_psmpwizerror.log"
-minimalFolderSize="150M" # This is used to make sure download is not corrupted, the number is just a ballpark number I chose, typically installs are 170mb+
+minimalFolderSize=150 # This is used to make sure download is not corrupted, the number is just a ballpark number I chose, typically installs are 170mb+
 
 #filenames (because package is different than actual file) - this goes with every -ivh/Uvh command
 newVersionFile="CARKpsmp-14.1.1.4.x86_64.rpm"                #update this locally
@@ -609,11 +611,13 @@ maintenanceUsers() {
 checkFolderSize() {
     msg="**** Checking Installation folder size..."
     echo -ne "$msg" && sleep 2
-    current_size=$(du -sh . | cut -f1)
-    
-    if [[ $current_size < "$minimalFolderSize" ]]; then
+    current_size=$(du -s . | awk '{print $1}') # Get current folder size in KB
+
+    current_size_MB=$(($current_size / 1024)) # Convert size to MB
+
+    if [ $current_size_MB -lt $minimalFolderSizeMB ]; then
         echo -e "\r$msg ${RED}FAIL${NC}" # Update the dynamic part while preserving the original message context.
-        echo -e "${YELLOW}The installation folder seems to be too small ($current_size), please make sure it was downloaded and extracted correctly.${NC}"
+        echo -e "${YELLOW}The installation folder seems to be too small (${current_size_MB}MB), please make sure it was downloaded and extracted correctly.${NC}"
         read -r -p "Do you want to continue? Type Yes/No: " response
         if [[ ! $response =~ ^([yY][eE][sS]|[yY])$ ]]; then
             echo "***** - Press ENTER to exit..."
