@@ -15,7 +15,7 @@ PSMPENVFILE=psmpenv.chk
 PSMPLOGS=psmplogs.chk
 
 VERSION_PSMP="v14.1" # UPDATE THIS (This is just for UI sake, it doesn't impact anything in the script)
-scriptVersion="3" # Script version, only dev should update this.
+scriptVersion="4" # Script version, only dev should update this.
 
 #colors
 GREEN='\033[0;32m'
@@ -36,6 +36,7 @@ newIntergratedInfraFile="CARKpsmp-infra-14.1.1.4.x86_64.rpm" #update this locall
 
 #packagenames (this goes with every -qa command)
 newVersion="CARKpsmp-14.1.1-4.x86_64"       #UPDATE this to the latest version always (It's usually diff than the .rpm file we define above, it has dash instead of dot.)
+newVersionSha256="5b27bccd2e25f12ddb23984a52cd1188c5fc01f38ff361c39ecb3f730e64c58f" # UPDATE this, example command: sha256sum CARKpsmp-14.1.1.4.x86_64.rpm | awk '{print $1}' 
 currVersion=$(rpm -qa | grep CARKpsmp-1)     #this grabs only CARKpsmp because of the "-1" (ie 11.05, 12.01, 12.02) to get accurate single package return
 package_to_remove=$(rpm -qa | grep CARKpsmp) #this grabs both CARKpsmp and Infra, to make sure we delete everything.
 
@@ -615,7 +616,7 @@ checkFolderSize() {
 
     current_size_MB=$(($current_size / 1024)) # Convert size to MB
 
-    if [ $current_size_MB -lt $minimalFolderSizeMB ]; then
+    if [ $current_size_MB -lt $minimalFolderSize ]; then
         echo -e "\r$msg ${RED}FAIL${NC}" # Update the dynamic part while preserving the original message context.
         echo -e "${YELLOW}The installation folder seems to be too small (${current_size_MB}MB), please make sure it was downloaded and extracted correctly.${NC}"
         read -r -p "Do you want to continue? Type Yes/No: " response
@@ -762,6 +763,29 @@ check_puppet_and_proceed() {
         fi
 	else
 		echo -e "\r$msg ${GREEN}PASS${NC}"
+    fi
+}
+
+check_version_type() {
+    msg="**** Checking downloaded CARKpsmp type (Sha256 checksum)..."
+    echo -ne "$msg" && sleep 2
+    
+    expectedSHA256=$newVersionSha256
+    currentSHA256=$(sha256sum $newVersionFile | awk '{print $1}')
+    
+    if [ "$expectedSHA256" != "$currentSHA256" ]; then
+        echo -e "\r$msg ${RED}FAIL${NC}"
+        echo -e "${RED}Failed to match RPM file '$newVersionFile' with expected checksum. Are you sure you copied the correct zip file? (Note: CyberArk provides two zips: RHELinux, RHELinux8; we want RHELinux8)${NC}"
+        read -r -p "Do you still want to proceed? [Y/N] [Recommended: No]: " response
+        if [[ $response =~ ^([yY][eE][sS]|[yY])$ ]]; then
+            echo "Proceeding with installation..."
+        else
+            echo "Installation aborted. Exiting..."
+            read -p "***** - Press ENTER to exit..."
+            exit 1
+        fi
+    else
+        echo -e "\r$msg ${GREEN}PASS${NC}"
     fi
 }
 
@@ -958,6 +982,9 @@ perform_os_checks
 
 # Check puppet is not running
 check_puppet_and_proceed
+
+# Check download version
+check_version_type
 
 ########################################################################################
 #---------------------------------------------- PSMP Installation Wizard---------------#
