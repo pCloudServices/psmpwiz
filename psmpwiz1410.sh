@@ -15,7 +15,7 @@ PSMPENVFILE=psmpenv.chk
 PSMPLOGS=psmplogs.chk
 
 VERSION_PSMP="v14.1" # UPDATE THIS (This is just for UI sake, it doesn't impact anything in the script)
-scriptVersion="4" # Script version, only dev should update this.
+scriptVersion="5" # Script version, only dev should update this.
 
 #colors
 GREEN='\033[0;32m'
@@ -789,6 +789,30 @@ check_version_type() {
     fi
 }
 
+# New logic for handling RHEL 9+ versions
+configure_rhel9() {
+    if [[ $ID == "rhel" && $VERSION_ID == 9* ]]; then
+        echo "Detected RHEL 9.x, applying SSH configuration changes..."
+        rm -f /etc/ssh/sshd_config.d/20-CARKpsmp.conf
+        cat <<EOT >> /etc/ssh/sshd_config.d/20-CARKpsmp.conf
+# Added to allow for PSMP to function with RHEL9 DO NOT MODIFY
+ChallengeResponseAuthentication yes
+usePAM yes
+
+# PSMP Enable debugging by uncommenting the following item
+# LogLevel DEBUG3
+
+# PSMP Enable tunneling by uncommenting both items
+# AllowTcpForwarding local
+# DisableForwarding no
+
+# PSMP Enable sftp by uncommenting the following item
+# Subsystem      sftp   /usr/libexec/openssh/sftp-server
+EOT
+        service sshd restart
+        echo "SSH configuration for RHEL 9.x applied and sshd service restarted."
+    fi
+}
 
 if [ "$EUID" -ne 0 ]; then
     read -p "***** Please run as root - Press ENTER to exit..."
@@ -979,6 +1003,9 @@ checkMinimumFreeDiskSpace
 
 # Check minimum required OS
 perform_os_checks
+
+# Apply configuration for RHEL 9+ versions
+configure_rhel9
 
 # Check puppet is not running
 check_puppet_and_proceed
@@ -1212,5 +1239,3 @@ echo -e "***** 1. Onboard the maintenance account we've created earlier (if not 
 echo -e "***** 2. Onboard the Root account of this machine and configure the maintenance account as 'Logon Account' for it (Also as best practice we suggest reducing maint account permissions after you onboard root)." && sleep 2
 echo -e "***** 3. Exlore MFA Caching capabilities: https://docs.cyberark.com/Product-Doc/OnlineHelp/PrivCloud-SS/Latest/en/Content/PASIMP/MFA-Caching.htm" && sleep 2
 echo -e "***** 4. Usage examples for PSMP: https://docs.cyberark.com/Product-Doc/OnlineHelp/PrivCloud-SS/Latest/en/Content/Privilege%20Cloud/privCloud-connect-using-SSH.htm#Usageexamples" && sleep 2
-
-
