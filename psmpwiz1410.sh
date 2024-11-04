@@ -15,7 +15,7 @@ PSMPENVFILE=psmpenv.chk
 PSMPLOGS=psmplogs.chk
 
 VERSION_PSMP="v14.1" # UPDATE THIS (This is just for UI sake, it doesn't impact anything in the script)
-scriptVersion="5" # Script version, only dev should update this.
+scriptVersion="6" # Script version, only dev should update this.
 
 #colors
 GREEN='\033[0;32m'
@@ -29,6 +29,7 @@ psmpparms="/var/tmp/psmpparms"
 psmpparmstmp="/var/tmp/psmpparmstmp"
 psmpwizerrorlog="_psmpwizerror.log"
 minimalFolderSize=150 # This is used to make sure download is not corrupted, the number is just a ballpark number I chose, typically installs are 170mb+
+vaultIniTimeout=60
 
 #filenames (because package is different than actual file) - this goes with every -ivh/Uvh command
 newVersionFile="CARKpsmp-14.1.1.4.x86_64.rpm"                #update this locally
@@ -36,7 +37,7 @@ newIntergratedInfraFile="CARKpsmp-infra-14.1.1.4.x86_64.rpm" #update this locall
 
 #packagenames (this goes with every -qa command)
 newVersion="CARKpsmp-14.1.1-4.x86_64"       #UPDATE this to the latest version always (It's usually diff than the .rpm file we define above, it has dash instead of dot.)
-newVersionSha256="5b27bccd2e25f12ddb23984a52cd1188c5fc01f38ff361c39ecb3f730e64c58f" # UPDATE this, example command: sha256sum CARKpsmp-14.1.1.4.x86_64.rpm | awk '{print $1}' 
+newVersionSha256="dff21a6feda46e186cebbc75a6a60a6721a4afded4eadbb1371336819a2fb717" # UPDATE this, example command: sha256sum CARKpsmp-14.1.1.4.x86_64.rpm | awk '{print $1}' 
 currVersion=$(rpm -qa | grep CARKpsmp-1)     #this grabs only CARKpsmp because of the "-1" (ie 11.05, 12.01, 12.02) to get accurate single package return
 package_to_remove=$(rpm -qa | grep CARKpsmp) #this grabs both CARKpsmp and Infra, to make sure we delete everything.
 
@@ -131,7 +132,7 @@ PVWAAUTH() {
             pvwaURLAPI=https://$TrimHTTPs.privilegecloud.cyberark.com/passwordvault/api
         fi
         echo "Making API call to: " $pvwaURLAPI
-        echo "Will timeout in 20s if doens't reach Portal on 443..."
+        echo "Will timeout in 20s if doesn't reach Portal on 443..."
         #call login
         pvwaLogin
         if [[ $(echo $rest | grep "200") ]]; then
@@ -690,11 +691,11 @@ perform_os_checks() {
     case $ID in
         "rhel")
             if is_version_valid $VERSION_ID 7 7.9 || \
-               is_version_valid $VERSION_ID 8 8.9 || \
-               is_version_valid $VERSION_ID 9 9.3; then
+               [[ $VERSION_ID == 8.* ]] || \
+               [[ $VERSION_ID == 9.* ]]; then
                 echo -e "\r$msg ${GREEN}PASS${NC}"
             else
-                echo -e "${RED}Unsupported version: $PRETTY_NAME. Supported versions are Red Hat Enterprise Linux versions 7 up to 7.9, 8 up to 8.9, and 9 up to 9.3.${NC}"
+                echo -e "${RED}Unsupported version: $PRETTY_NAME. Supported versions are Red Hat Enterprise Linux versions 7 up to 7.9, 8 up to 8.9, and 9.x.${NC}"
                 prompt_user_decision
             fi
             ;;
@@ -709,9 +710,7 @@ perform_os_checks() {
             fi
             ;;
         "rocky")
-            if is_version_valid $VERSION_ID 8.7 8.7 || \
-               is_version_valid $VERSION_ID 8.8 8.8 || \
-               is_version_valid $VERSION_ID 8.9 8.9; then
+			if [[ $VERSION_ID == 8.* ]]; then
                 echo -e "\r$msg ${GREEN}PASS${NC}"
             else
                 echo -e "${RED}Unsupported version: $PRETTY_NAME. Supported versions are Rocky Linux 8.7, 8.8, 8.9.${NC}"
@@ -1069,6 +1068,7 @@ maintenanceUsers
 			if [ ! -f "$VLTFILE" ]; then
 			################################### Vault.ini
 				sed -i "s/1.1.1.1/"$vaultip"/g" vault.ini
+				sed -i "s/TIMEOUT=10/TIMEOUT="$vaultIniTimeout"/g" vault.ini
 				echo "vault.ini updated" >stvlt.chk
 			fi
 			# Check if pvwaURL is a cyberark.cloud and test identity.
